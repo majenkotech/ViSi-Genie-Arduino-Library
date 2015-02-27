@@ -1,10 +1,11 @@
-/////////////////////// GenieArduino 20/07/2014 ///////////////////////
+/////////////////////// GenieArduino 22/01/2015 ///////////////////////
 //
 //      Library to utilize the 4D Systems Genie interface to displays
 //      that have been created using the Visi-Genie creator platform.
 //      This is intended to be used with the Arduino platform.
 //
 //		Improvements/Updates by
+//      Clinton Keith, January 2015, www.clintonkeith.com
 //		4D Systems Engineering, July 2014, www.4dsystems.com.au
 //      Clinton Keith, March 2014, www.clintonkeith.com
 //		Clinton Keith, January 2014, www.clintonkeith.com		
@@ -47,7 +48,7 @@
 
 #undef	GENIE_DEBUG
 
-#define	GENIE_VERSION	"GenieArduino 20-JUL-2014"
+#define	GENIE_VERSION	"GenieArduino 22-JAN-2015"
 
 // Genie commands & replys:
 
@@ -136,6 +137,7 @@ union genieFrame {
 
 #define	MAX_GENIE_EVENTS	16	// MUST be a power of 2
 #define	MAX_GENIE_FATALS	10
+#define MAX_LINK_STATES		20
 
 struct EventQueueStruct {
 	genieFrame	frames[MAX_GENIE_EVENTS];
@@ -194,7 +196,7 @@ private:
 	// DoEvents() to save the current state, receive a frame,
 	// then restore the state
 	//
-	uint8_t LinkStates[5];
+	uint8_t LinkStates[MAX_LINK_STATES];
 	//
 	// Stack pointer
 	//

@@ -1,10 +1,11 @@
-/////////////////////////// GenieArduino 20/07/2014 /////////////////////////
+/////////////////////////// GenieArduino 22/01/2015 /////////////////////////
 //
 //      Library to utilise the 4D Systems Genie interface to displays
 //      that have been created using the Visi-Genie creator platform.
 //      This is intended to be used with the Arduino platform.
 //
 //		Improvements/Updates by
+//      Clinton Keith, January 2015, www.clintonkeith.com
 //		4D Systems Engineering, July 2014, www.4dsystems.com.au
 //      Clinton Keith, March 2014, www.clintonkeith.com
 //		Clinton Keith, January 2014, www.clintonkeith.com		
@@ -32,7 +33,7 @@
  *    License along with genieArduino.
  *    If not, see <http://www.gnu.org/licenses/>.
  *********************************************************************/
-
+//#include <Streaming.h>
 #include "genieArduino.h"
 
 #if (ARDUINO >= 100)
@@ -53,7 +54,7 @@ Genie::Genie()
 	UserEventHandlerPtr UserHandler = NULL;
 	
 	debugSerial = NULL; 
-	LinkStates[5] = GENIE_LINK_IDLE;
+	LinkStates[MAX_LINK_STATES] = GENIE_LINK_IDLE;
 	LinkState = &LinkStates[0];
 	Timeout = TIMEOUT_PERIOD;
 	Timeouts = 0;
@@ -128,9 +129,12 @@ void Genie::WaitForIdle (void) {
 //
 int linkCount=0;
 void Genie::PushLinkState (uint8_t newstate) {
+	if (linkCount >= MAX_LINK_STATES){
+		Resync();
+	}
     linkCount++;
 	LinkState++;
-    //if (debugSerial) { *debugSerial << " LinkState count = " << linkCount << ", Freemem = " << freeRam() << ", " << (unsigned long)&LinkState[0] << endl; } ;
+    //if (debugSerial) { *debugSerial << " newstate = " << newstate << " LinkState count = " << linkCount << ", Freemem = " << freeRam() << ", " << (unsigned long)&LinkState[0] << ", rxframe_count = " << rxframe_count << endl; } ;
 	SetLinkState(newstate);   
 }
 
@@ -156,7 +160,7 @@ uint16_t Genie::DoEvents (void) {
 	static uint8_t	rx_data[6];
 	static uint8_t	checksum = 0;
 	c = Getchar();
-    //if (debugSerial && c != 0xFD) *debugSerial << _HEX(c)<<", ";
+    //if (debugSerial && c != 0xFD) *debugSerial << _HEX(c)<<", "<<"["<<GetLinkState()<<"], ";
 	////////////////////////////////////////////
 	//
 	// If there are no characters to process and we have
@@ -167,6 +171,9 @@ uint16_t Genie::DoEvents (void) {
 		return GENIE_EVENT_NONE;
 	}
 	
+    //if (debugSerial) { *debugSerial << "Freemem = " << freeRam()<< endl; } ;
+    //return GENIE_EVENT_RXCHAR; // debug
+
 	///////////////////////////////////////////
 	//
 	// Main state machine
@@ -335,9 +342,7 @@ void Genie::FatalError(void) {
 // used serial port's Rx buffer.
 //
 void Genie::FlushSerialInput(void) {
-	do {
-		deviceSerial->read();
-	} while (Error != ERROR_NOCHAR);
+    while (deviceSerial->read() >= 0);
 }
 
 /////////////////////// Resync //////////////////////////
@@ -350,12 +355,15 @@ void Genie::FlushSerialInput(void) {
 //
 void Genie::Resync (void) {
 	
-	for (long timeout = millis() + RESYNC_PERIOD ; millis() < timeout;) {};
+	//for (long timeout = millis() + RESYNC_PERIOD ; millis() < timeout;) {};
     
 	FlushSerialInput();
 	FlushEventQueue();
 	Timeouts = 0;
-	GetLinkState() == GENIE_LINK_IDLE;    
+	linkCount = 0;
+
+	LinkState = &LinkStates[0];
+	*LinkState = GENIE_LINK_IDLE;    
 }
 
 ///////////////////////// handleError /////////////////////////
@@ -364,8 +372,8 @@ void Genie::Resync (void) {
 // help recover from errors.
 //
 void Genie::handleError (void) {
-    //	Serial2.write (Error + (1<<5));
-    //	if (Error == GENIE_NAK) Resync();
+   	//if (debugSerial) { *debugSerial << "Handle Error Called!\n"; }
+   	Resync();
 }
 
 ////////////////////// Genie::FlushEventQueue ////////////////////
@@ -420,9 +428,10 @@ bool Genie::EnqueueEvent (uint8_t * data) {
 		EventQueue.wr_index++;
 		EventQueue.wr_index &= MAX_GENIE_EVENTS -1;
 		EventQueue.n_events++;
+		//if (debugSerial) { *debugSerial << "Enque Event " << _HEX(*data) << ", count = " << EventQueue.n_events << endl; }
 		return TRUE;
 	} else {
-		Error = ERROR_REPLY_OVR;
+		Error = ERROR_REPLY_OVR;   	
 		handleError();
 		return FALSE;
 	}
@@ -513,7 +522,18 @@ uint16_t Genie::WriteObject (uint16_t object, uint16_t index, uint16_t data)
 	deviceSerial->write(lsb) ;
     checksum ^= lsb;
 	deviceSerial->write(checksum) ;
-    
+	
+	/*
+    if (debugSerial) { 
+    	*debugSerial << "WriteObject: " <<  ", ";
+    	*debugSerial << _HEX(object) << ", ";
+    	*debugSerial << _HEX(index) << ", ";
+    	*debugSerial << _HEX(msb) << ", ";
+    	*debugSerial << _HEX(lsb) << ", ";
+    	*debugSerial << _HEX(checksum) << endl;
+    	*debugSerial << "Freemem = " << freeRam()<< endl; 
+	}
+	*/
 	PushLinkState(GENIE_LINK_WFAN);	
 }
 
@@ -535,7 +555,7 @@ void Genie::WriteContrast (uint16_t value) {
 	deviceSerial->write(value) ;
     checksum ^= value ;
 	deviceSerial->write(checksum) ;
-    
+
 	PushLinkState(GENIE_LINK_WFAN);   
 }
 
@@ -562,7 +582,7 @@ uint16_t Genie::WriteStr (uint16_t index, char *string) {
 		checksum ^= *p;
 	}
 	deviceSerial->write(checksum);
-	
+
 	PushLinkState(GENIE_LINK_WFAN);
 
 	return 0;

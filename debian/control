@@ -1,0 +1,42 @@
+Source: libvisi-genie
+Section: libraries
+Priority: extra
+XBSC-Group: Display
+XBSC-Subgroup: LCD
+Maintainer: Matt Jenkins <matt@majenko.co.uk>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.4
+
+Package: libvisi-genie
+Architecture: all
+Provides: genieArduino.h
+Description: 4D ViSi-Genie display library
+ The ViSi-Genie is a breakthrough in the way 4D Systems’ graphic
+ display modules are programmed, it provides an easy method for
+ designing complex Graphics User Interface applications without any
+ coding. It is an environment like no other, a code-less programming
+ environment that provides the user with a rapid visual experience,
+ enabling a simple GUI application to be ‘designed’ from scratch in
+ literally seconds.
+ .
+ ViSi-Genie does all the background coding, no 4DGL to learn, it does
+ it all for you.
+ .
+ Pick and choose the relevant objects to place on the display, much
+ like the ViSi environment, yet without having to write a single line
+ of code. The full animation of the objects is done under-the-hood,
+ such as pressing a button or moving the thumb of the slider. Each
+ object has parameters which can be set, and configurable events to
+ animate and drive other objects or communicate with an external host.
+ .
+ Simply place an object on the screen, position and size it to suit,
+ set the parameters such as colour, range, text, and finally select
+ the event you wish the object to be associated with, it is that simple.
+ .
+ In seconds you can transform a blank display into a fully animated
+ GUI with moving meters, animated press and release buttons, and much
+ more. All without writing a single line of code!
+ .
+ ViSi-Genie provides the user with a feature rich rapid development
+ environment, second to none.
+
