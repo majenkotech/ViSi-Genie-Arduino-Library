@@ -50,7 +50,9 @@ int freeRam () {
 
 Genie::Genie() {
     // Pointer to the user's event handler function
-    UserEventHandlerPtr UserHandler = NULL;
+    UserHandler = NULL;
+    UserByteReader = NULL;
+    UserDoubleByteReader = NULL;
     debugSerial = NULL;
     LinkStates[MAX_LINK_STATES] = GENIE_LINK_IDLE;
     LinkState = &LinkStates[0];
@@ -78,26 +80,30 @@ uint16_t Genie::GetEventData (genieFrame * e) {
     return  (e->reportObject.data_msb << 8) + e->reportObject.data_lsb;
 }
 
-//////////////////////// GetMagicBytes ///////////////////////////
+//////////////////////// GetNextByte ///////////////////////////
 //
-// Copies the Magic Bytes from a Magic Bytes report into a local
-// array of bytes.
+// Read one byte from the serial device.  Blocking.
 //
-uint16_t Genie::GetMagicBytes (genieFrame * e, uint8_t *buffer) {
-    memcpy(buffer, e->magicBytes.bytes, e->magicBytes.length);
-    return e->magicBytes.length;
+uint8_t Genie::GetNextByte() {
+    while (deviceSerial->available() < 1) {
+        continue;
+    }
+    return deviceSerial->read();
 }
 
-//////////////////////// GetMagicDBytes ///////////////////////////
+//////////////////////// GetNextDoubleByte ///////////////////////////
 //
-// Copies the Magic Doublebytes from a Magic Doublebytes report 
-// into a local array of shorts.
+// Reads two bytes from the serial device and joins them into one
+// double byte.  Blocking.
 //
-uint16_t Genie::GetMagicDBytes (genieFrame * e, uint16_t *buffer) {
-    for (int i = 0; i < e->magicDBytes.length; i++) {
-        buffer[i] = e->magicDBytes.shorts[i];
+uint16_t Genie::GetNextDoubleByte() {
+    uint16_t out;
+    while (deviceSerial->available() < 1) {
+        continue;
     }
-    return e->magicDBytes.length;
+    out = (deviceSerial->read()) << 8;
+    out |= deviceSerial->read();
+    return out;
 }
 
 //////////////////////// Genie::EventIs ///////////////////////////
@@ -181,6 +187,8 @@ uint16_t Genie::DoEvents (void) {
     static uint8_t	rx_data[6];
     static uint8_t	checksum = 0;
     c = Getchar();
+    static struct MagicReportHeader magicHeader;
+    static uint8_t magicByte = 0;
 
     //if (debugSerial && c != 0xFD) *debugSerial << _HEX(c)<<", "<<"["<<GetLinkState()<<"], ";
     ////////////////////////////////////////////
@@ -215,10 +223,12 @@ uint16_t Genie::DoEvents (void) {
                     break;
 
                 case GENIEM_REPORT_BYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMBYTES);
                     break;
    
                 case GENIEM_REPORT_DBYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMDBYTES);
                     break;
 
@@ -250,10 +260,12 @@ uint16_t Genie::DoEvents (void) {
                     break;
 
                 case GENIEM_REPORT_BYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMBYTES);
                     break;
    
                 case GENIEM_REPORT_DBYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMDBYTES);
                     break;
 
@@ -276,10 +288,12 @@ uint16_t Genie::DoEvents (void) {
                     break;
 
                 case GENIEM_REPORT_BYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMBYTES);
                     break;
    
                 case GENIEM_REPORT_DBYTES:
+                    magicByte = 0;
                     PushLinkState(GENIE_LINK_RXMDBYTES);
                     break;
 
@@ -315,9 +329,7 @@ uint16_t Genie::DoEvents (void) {
     // into the event queue
     //
     if (GetLinkState() == GENIE_LINK_RXREPORT ||
-            GetLinkState() == GENIE_LINK_RXEVENT || 
-            GetLinkState() == GENIE_LINK_RXMBYTES || 
-            GetLinkState() == GENIE_LINK_RXMDBYTES) {
+            GetLinkState() == GENIE_LINK_RXEVENT) {
         checksum = (rxframe_count == 0) ? c : checksum ^ c;
         rx_data[rxframe_count] = c;
 
@@ -340,6 +352,57 @@ uint16_t Genie::DoEvents (void) {
         rxframe_count++;
         return GENIE_EVENT_RXCHAR;
     }
+
+    ///////////////////////////////////////////////////////
+    // We get here if we are in the process of receiving
+    // a magic report.  When the header has been received
+    // trigger the byte or double-byte handler to receive
+    // the rest of the data.
+    //
+    if (GetLinkState() == GENIE_LINK_RXMBYTES || 
+        GetLinkState() == GENIE_LINK_RXMDBYTES) {
+
+        switch(magicByte) {
+            case 0:
+                magicHeader.cmd = c;
+                magicByte++;
+                break;
+            case 1:
+                magicHeader.index = c;
+                magicByte++;
+                break;
+            case 2:
+                magicHeader.length = c;
+                magicByte++;
+                if (magicHeader.cmd == GENIEM_REPORT_BYTES) {
+                    if (UserByteReader != NULL) {
+                        UserByteReader(magicHeader.index, magicHeader.length);
+                    } else {
+                        // No handler defined - we need to sink the bytes.
+                        while (--magicHeader.length > 0) {
+                            (void)GetNextByte();
+                        }
+                    }
+                } else if (magicHeader.cmd == GENIEM_REPORT_DBYTES) {
+                    if (UserDoubleByteReader != NULL) {
+                        UserDoubleByteReader(magicHeader.index, magicHeader.length);
+                    } else {
+                        // No handler defined - we need to sink the bytes.
+                        while (--magicHeader.length > 0) {
+                            (void)GetNextDoubleByte();
+                        }
+                    }
+                }
+                // Now we want to discard the checksum. We don't yet
+                // know what has been going on with the data, so we
+                // can't calculate the checksum.
+                (void)GetNextByte();
+                PopLinkState();
+                break;
+        }
+        return GENIE_EVENT_RXCHAR;
+    }
+    return GENIE_EVENT_RXCHAR; // What should we really return here?!
 }
 
 //////////////////////// Genie::Getchar //////////////////////////
@@ -671,6 +734,24 @@ uint16_t Genie::WriteStrU (uint16_t index, uint16_t *string) {
 //
 void Genie::AttachEventHandler (UserEventHandlerPtr handler) {
     UserHandler = handler;
+}
+
+/////////////////// AttachMagicByteReader //////////////////////
+//
+// "Attaches" a pointer to a user's function for receiving
+// GenieMagic byte reports.
+//
+void Genie::AttachMagicByteReader(UserBytePtr handler) {
+    UserByteReader = handler;
+}
+
+/////////////////// AttachMagicDoubleByteReader//////////////////////
+//
+// "Attaches" a pointer to a user's function for receiving
+// GenieMagic doublebyte reports.
+//
+void Genie::AttachMagicDoubleByteReader(UserDoubleBytePtr handler) {
+    UserDoubleByteReader = handler;
 }
 
 //////////////////////// deviceSerial->read //////////////////////////

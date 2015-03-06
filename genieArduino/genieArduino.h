@@ -122,18 +122,10 @@ struct FrameReportObj {
     uint8_t        data_lsb;
 };
 
-struct MagicBytesObj {
+struct MagicReportHeader {
     uint8_t         cmd;
     uint8_t         index;
     uint8_t         length;
-    uint8_t         bytes[GENIE_FRAME_SIZE-4];
-};
-
-struct MagicDBytesObj {
-    uint8_t         cmd;
-    uint8_t         index;
-    uint8_t         length;
-    uint16_t        shorts[(GENIE_FRAME_SIZE-4)/2];
 };
 
 /////////////////////////////////////////////////////////////////////
@@ -151,8 +143,6 @@ struct MagicDBytesObj {
 union genieFrame {
     uint8_t             bytes[GENIE_FRAME_SIZE];
     FrameReportObj      reportObject;
-    MagicBytesObj       magicBytes;
-    MagicDBytesObj      magicDBytes;
 };
 
 #define MAX_GENIE_EVENTS    16    // MUST be a power of 2
@@ -167,6 +157,8 @@ struct EventQueueStruct {
 };
 
 typedef void        (*UserEventHandlerPtr) (void);
+typedef void        (*UserBytePtr)(uint8_t, uint8_t);
+typedef void        (*UserDoubleBytePtr)(uint8_t, uint8_t);
 
 /////////////////////////////////////////////////////////////////////
 // User API functions
@@ -187,6 +179,8 @@ public:
     bool        DequeueEvent        (genieFrame * buff);
     uint16_t    DoEvents            (void);
     void        AttachEventHandler  (UserEventHandlerPtr userHandler);
+    void        AttachMagicByteReader (UserBytePtr userHandler);
+    void        AttachMagicDoubleByteReader (UserDoubleBytePtr userHandler);
     void        pulse               (int pin);
     void        assignDebugPort     (Stream &port);
 
@@ -194,8 +188,9 @@ public:
 
     uint16_t    WriteMagicBytes     (uint16_t index, uint8_t *bytes, uint16_t len);
     uint16_t    WriteMagicDBytes    (uint16_t index, uint16_t *bytes, uint16_t len);
-    uint16_t    GetMagicBytes       (genieFrame * e, uint8_t *buffer);
-    uint16_t    GetMagicDBytes       (genieFrame * e, uint16_t *buffer);
+
+    uint8_t     GetNextByte         (void);
+    uint16_t    GetNextDoubleByte   (void);
 
 private:
     void        FlushEventQueue     (void);
@@ -253,6 +248,8 @@ private:
     Stream* debugSerial;
 
     UserEventHandlerPtr UserHandler;
+    UserBytePtr UserByteReader;
+    UserDoubleBytePtr UserDoubleByteReader;
 
 };
 
